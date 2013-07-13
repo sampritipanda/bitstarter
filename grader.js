@@ -22,6 +22,7 @@ References:
 */
 
 var fs = require('fs');
+var rest = require('restler');
 var program = require('commander');
 var cheerio = require('cheerio');
 var HTMLFILE_DEFAULT = "index.html";
@@ -44,8 +45,7 @@ var loadChecks = function(checksfile) {
     return JSON.parse(fs.readFileSync(checksfile));
 };
 
-var checkHtmlFile = function(htmlfile, checksfile) {
-    $ = cheerioHtmlFile(htmlfile);
+var checkHtmlFile = function($, checksfile) {
     var checks = loadChecks(checksfile).sort();
     var out = {};
     for(var ii in checks) {
@@ -61,14 +61,43 @@ var clone = function(fn) {
     return fn.bind({});
 };
 
+var grade = function($) {
+    var checkJson = checkHtmlFile($, program.checks);
+    return JSON.stringify(checkJson, null, 4);
+}
+
 if(require.main == module) {
     program
         .option('-c, --checks <check_file>', 'Path to checks.json', clone(assertFileExists), CHECKSFILE_DEFAULT)
-        .option('-f, --file <html_file>', 'Path to index.html', clone(assertFileExists), HTMLFILE_DEFAULT)
+        .option('-f, --file <html_file>', 'Path to index.html', clone(assertFileExists))
+        .option('-u, --url <web_url>', 'Path to web page')
         .parse(process.argv);
-    var checkJson = checkHtmlFile(program.file, program.checks);
-    var outJson = JSON.stringify(checkJson, null, 4);
-    console.log(outJson);
-} else {
+
+    if(program.file !== undefined && program.url !== undefined){
+        console.log("You can't specify both a url and file at once");
+        process.exit(1);
+    }
+    else if(program.file === undefined && program.url === undefined){
+        program.file = HTMLFILE_DEFAULT;
+    }
+
+    if(program.url !== undefined){
+      rest.get(program.url).on('complete', function(result) {
+        if (result instanceof Error) {
+          console.log("%s does not exist. Exiting.", program.url);
+          process.exit(1);
+        }
+        else {
+          $ = cheerio.load(result);
+        }
+        console.log(grade($));
+      });
+    }
+    else {
+      $ = cheerioHtmlFile(program.file);
+      console.log(grade($));
+    }
+}
+else {
     exports.checkHtmlFile = checkHtmlFile;
 }
